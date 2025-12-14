@@ -2,21 +2,26 @@
 # a column in a tabular representation (e.g. CSV, Dataframe)
 # 
 # <field_name>:
-#   dtype:    The field data type. Supported values are int, float, bool, datetime, str
-#             or a list of values (all the same dtype) for categorical data, i.e. when
-#             the column can only take on one of the given values (`str` is allowed only
-#             for event_id and station_id and will be converted to categorical in the code)
-#   default:  The default for missing values. float, datetime or categorical
-#             columns can represent missing values natively (e.g., NaN or None), while
-#             int and bool do not support missing values and require an explicit default
-#             (usually 0 and false)
+#   dtype:    The field data type. Supported values are int, float, bool, datetime, or a
+#             list of values (all the same dtype) for categorical data, i.e. when the
+#             field can only take on one of the given values. Strings of text (`str`) are
+#             allowed only as category values (event_id and station_id dtype is`str` but
+#             their dtype will eventually be converted to categorical in the code)
+#   default:  The default for missing values. float, datetime or categorical fields can
+#             represent missing values natively (e.g., NaN or None), while int and bool
+#             require an explicit default (e.g., 0 and false)
 #   help:     The field description. "[Mandatory]" in the text means that values for this
-#             fields cannot be missing, "[Code generated]" means that values should not
-#             be present in "raw" source metadata because it has been inferred from data
+#             field cannot be missing
+
+# IMPORTANT FOR SOURCE DATASET PROVIDERS: IF YOU ARE BUILDING A SOURCE DATASET TO BE
+# HARMONIZED WITH THIS PACKAGE TOOLS:
+# 1.YOU DO NOT NEED TO PROVIDE THE FOLLOWING FIELDS:
+#    id, available_components, sampling_rate
+# 2. RECORDS WITH MISSING VALUE FOR MANDATORY FIELDS (SEE ABOVE) WILL BE DISCARDED
 
 id:
   dtype: int
-  help: the unique record id [Mandatory] [Code generated]
+  help: the unique record id [Mandatory]
 epicentral_distance:
   dtype: float
   help: epicentral distance (aka repi, in km) [Mandatory]
@@ -64,10 +69,10 @@ origin_time_resolution:
     default (usually 1 for days and months, 0 for hours minutes and seconds) [Mandatory]
 event_latitude:
   dtype: float
-  help: event latitude (hypocenter latitude, in deg) in [-90, 90]  [Mandatory]
+  help: event latitude (hypocenter latitude, in deg) in [-90, 90] [Mandatory]
 event_longitude:
   dtype: float
-  help: event longitude (hypocenter longitude, in deg) in [-180, 180]  [Mandatory]
+  help: event longitude (hypocenter longitude, in deg) in [-180, 180] [Mandatory]
 magnitude:
   dtype: float
   help: event magnitude [Mandatory]
@@ -182,27 +187,14 @@ available_components:
     the available time histories for this recording: H: only one horizontal 
     component, HH: the two horizontal components, HV: one horizontal and one vertical,
     V: only vertical, HHV: all three components (2 horizontal, and the vertical)
-    [Mandatory] [Code generated]
+    [Mandatory]
 sampling_rate:
   dtype: int
   help: >- 
     the sampling rate. If non-zero, it is the sampling rate of all available
     components (h1, h2, v). Zero denotes some error (sampling rate not equal among 
     components, or non-integer): in this case, no waveform will be saved. [Mandatory]
-    [Code generated]
   default: 0
-start_time:
-  dtype: datetime
-  help: >-
-    start time of the time histories (h1, h2, v). If provided, all components 
-    start time is the same. If missing (NA), this condition is not guaranteed or simply
-    the datum is N/A
-p_wave_arrival_time:
-  dtype: datetime
-  help: theoretical P-wave arrival time, if available
-s_wave_arrival_time:
-  dtype: datetime
-  help: theoretical S-wave arrival time, if available
 PGA:
   dtype: float
   help: >-

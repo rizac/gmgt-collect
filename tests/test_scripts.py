@@ -3,6 +3,7 @@ import importlib.util
 import shutil
 import os
 import sys
+import h5py
 from os.path import dirname, join, abspath, isdir, splitext, basename, isfile
 from io import StringIO, BytesIO
 import subprocess
@@ -13,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-dest_data_dir = join(abspath(dirname(__file__)), 'tmp')
+dest_data_dir = join(abspath(dirname(__file__)), 'tmp.datasets')
 source_data_dir = join(abspath(dirname(__file__)), 'source_data')
 
 
@@ -44,15 +45,14 @@ def run_(dataset: str, metadata_file_name: str):
     assert isdir(src_data_dir)
     src_metadata_path = join(src_data_dir, metadata_file_name)
     assert isfile(src_metadata_path)
-    my_dest_data_dir = join(dest_data_dir, dataset)
-    os.mkdir(my_dest_data_dir)
-    config_path = join(my_dest_data_dir, "config.yml")
+
+    config_path = join(dest_data_dir, f"{dataset}.config.yml")
 
     with open(config_path, 'w') as _:
         _.write(f"""
 source_metadata: "{src_metadata_path}"
 source_data: "{src_data_dir}"
-destination: "{my_dest_data_dir}"
+destination: "{dest_data_dir}"
 """)
     module_name = f"create_{dataset}_dataset"
     try:
@@ -78,18 +78,35 @@ destination: "{my_dest_data_dir}"
         with patch(f"{module_name}.min_waveforms_ok_ratio", 0):
             mod.main()
     except SystemExit as err:
+        dataset_path = join(dest_data_dir, dataset + '.hdf')
+
+        data = {
+            'metadata': 0,
+            'waveforms': 0,
+            'metadata_doc': 0
+        }
+        with h5py.File(dataset_path, 'r') as f:
+            assert sorted(f.keys()) == ['metadata', 'metadata_doc', 'waveforms']
+            # keys = f['waveforms'].keys()
+            # asd = 9
+        sizes = hdf_dataset_sizes(dataset_path)
+        assert sizes['metadata'] > 250000
+        assert sizes['waveforms'] > 250000
+
         assert err.args[0] == 0
-        w_file = join(my_dest_data_dir, 'metadata.hdf')
-        assert isfile(w_file)
-        w_dir = join(my_dest_data_dir, 'waveforms')
-        assert isdir(w_dir)
-        some_file = False
-        for _, _, files in os.walk(w_dir):
-            if files and any(splitext(_)[1] == '.h5' for _ in files):  # If `files` list is not empty
-                some_file = True
-                break  # Directory contains at least one file
-        assert some_file
-        # Get printed output
+        assert isfile(join(dest_data_dir, 'meta-only', dataset + '.hdf'))
+        assert isfile(join(dest_data_dir, 'logs', dataset + '.log'))
+
+        # assert isfile(w_file)
+        # w_dir = join(dest_data_dir, 'waveforms')
+        # assert isdir(w_dir)
+        # some_file = False
+        # for _, _, files in os.walk(w_dir):
+        #     if files and any(splitext(_)[1] == '.h5' for _ in files):  # If `files` list is not empty
+        #         some_file = True
+        #         break  # Directory contains at least one file
+        # assert some_file
+        # # Get printed output
     except Exception as e:
         # Raise a new exception with the subprocess traceback
         raise
@@ -98,6 +115,23 @@ destination: "{my_dest_data_dir}"
     #     # Restore originals
     #     sys.argv = original_argv
     #     sys.stdout = original_stdout
+
+
+def hdf_dataset_sizes(file_path):
+    sizes = {}
+
+    def visit(name, obj):
+        if isinstance(obj, h5py.Dataset):
+            key = name.split("/")[0]
+            if key != 'metadata':
+                asd = 9
+            sizes.setdefault(key, 0)
+            sizes[key] += obj.size * obj.dtype.itemsize  # number of elements * bytes per element
+
+    with h5py.File(file_path, 'r') as f:
+        f.visititems(visit)
+
+    return sizes
 
 
 def test_nga_west2():
