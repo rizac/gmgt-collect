@@ -13,11 +13,11 @@
 #   help:     The field description. "[Mandatory]" in the text means that values for this
 #             field cannot be missing
 
-# IMPORTANT FOR SOURCE DATASET PROVIDERS: IF YOU ARE BUILDING A SOURCE DATASET TO BE
-# HARMONIZED WITH THIS PACKAGE TOOLS:
-# 1.YOU DO NOT NEED TO PROVIDE THE FOLLOWING FIELDS:
+# [!] IF YOU ARE BUILDING A SOURCE DATASET TO BE HARMONIZED WITH THIS PACKAGE TOOLS:
+# 1. You do not need to provide the following fields (they will auto generated):
 #    id, available_components, sampling_rate
-# 2. RECORDS WITH MISSING VALUE FOR MANDATORY FIELDS (SEE ABOVE) WILL BE DISCARDED
+# 2. Records with missing values for mandatory fields ("[Mandatory]" see above) can be
+#    provided, but they will be discarded from the harmonized dataset
 
 id:
   dtype: int

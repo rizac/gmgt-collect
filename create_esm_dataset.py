@@ -878,16 +878,17 @@ def main():  # noqa
                     0.5 * values.memory_usage(deep=True, index=False):
                 metadata[col] = tmp_values
                 meta_changed = True
+
+    # close file:
+    waveforms_hdf_file.flush()
+    waveforms_hdf_file.close()
+
     metadata.to_hdf(
         dest_waveforms_path,
         key="metadata",  # name of the table in the HDF5 file
         format="table",
         mode="a"  # append mode; keeps existing groups/datasets
     )
-
-    # close file:
-    waveforms_hdf_file.flush()
-    waveforms_hdf_file.close()
 
     if meta_changed:
         save_metadata(dest_metadata_path, metadata, force_overwrite=True)
@@ -1115,6 +1116,7 @@ def save_metadata(
         # (1st time creates a new file because we deleted it, see above)
         'format': "table",  # required for appendable table
         'append': not force_overwrite,  # first batch still uses append=True
+        'index': False,
         # 'min_itemsize': {
         #     'event_id': metadata["event_id"].str.len,
         #     'station_id': metadata["station_id"].str.len,
@@ -1125,7 +1127,7 @@ def save_metadata(
 
 
 def save_waveforms(
-        h5_group: h5py.Group,
+        h5_file: Union[h5py.Group, h5py.File],
         path: str,
         h1: Optional[Waveform],
         h2: Optional[Waveform],
@@ -1140,24 +1142,22 @@ def save_waveforms(
     assert len(dts) == 1, "Non-unique dt in waveforms"
     dt = dts.pop() if dts else None
 
-    for path_path in path.split('/'):
-        h5_group = h5_group.require_group(path_path)
+    paths = path.split('/')
+    h5_group = h5_file
+    for _ in paths[:-1]:
+        h5_group = h5_group.require_group(_)
 
-    # Save existing components
-    if h1 is not None:
-        h5_group.create_dataset("h1", data=h1.data)
-    if h2 is not None:
-        h5_group.create_dataset("h2", data=h2.data)
-    if v is not None:
-        h5_group.create_dataset("v", data=v.data)
-    h5_group.attrs["dt"] = dt
-
-    # # Add read permission for group (stat.S_IRGRP) and others (stat.S_IROTH).
-    # if isfile(file_path):
-    #     os.chmod(file_path, os.stat(file_path).st_mode | stat.S_IRGRP | stat.S_IROTH)
+    # Create variable-length array dataset
+    empty = np.array([], dtype=float)
+    dset = h5_group.create_dataset(paths[-1], (3,), dtype=h5py.vlen_dtype(np.float64))
+    dset[0] = h1.data if h1 is not None else empty
+    dset[1] = h2.data if h2 is not None else empty
+    dset[2] = v.data if v is not None else empty
+    # Store dt as attribute
+    dset.attrs['dt'] = dt
 
 
-def iter_records(hdf_path, query_string, chunksize=10000):
+def iter_records(hdf_path, query_string=None, chunksize=10000):
     """
     THIS CODE IS A REMINDER OF HOW CODE COULD READ BACK THE DATA.
 
@@ -1166,18 +1166,14 @@ def iter_records(hdf_path, query_string, chunksize=10000):
 
     metadata_row is a Pandas Series.
     """
-    EMPTY = np.array([], dtype=float)
     with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
-        wf_root = h5_f["waveforms"]
+        h5_root_group = h5_f["waveforms"]
         # Query table in chunks
-        for chunk in pd_f.select("metadata", where=query_string, chunksize=chunksize):
+        for chunk in pd_f.select("metadata", where=query_string, chunksize=chunksize):  # noqa
             # Iterate rows of this chunk
             for row in chunk.itertuples(index=False):
-                grp = wf_root[row.event_id][row.station_id]
-                h1 = grp["h1"][:] if "h1" in grp else EMPTY
-                h2 = grp["h2"][:] if "h2" in grp else EMPTY
-                v = grp["v"][:] if "v" in grp else EMPTY
-                yield h1, h2, v, row
+                waveform = h5_root_group[row.event_id][row.station_id]
+                yield waveform[0], waveform[1], waveform[2], waveform.attrs['dt'], row
 
 
 def exc_func_and_lineno(exc, module_path: str = __file__) -> tuple[str, int]:

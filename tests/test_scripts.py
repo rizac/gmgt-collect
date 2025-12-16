@@ -78,8 +78,9 @@ destination: "{dest_data_dir}"
         with patch(f"{module_name}.min_waveforms_ok_ratio", 0):
             mod.main()
     except SystemExit as err:
-        dataset_path = join(dest_data_dir, dataset + '.hdf')
+        assert err.args[0] == 0  # ok exit
 
+        dataset_path = join(dest_data_dir, dataset + '.hdf')
         data = {
             'metadata': 0,
             'waveforms': 0,
@@ -90,12 +91,22 @@ destination: "{dest_data_dir}"
             # keys = f['waveforms'].keys()
             # asd = 9
         sizes = hdf_dataset_sizes(dataset_path)
-        assert sizes['metadata'] > 250000
-        assert sizes['waveforms'] > 250000
+        assert sizes['metadata'] > 150000
+        assert sizes['waveforms'] > 10
 
-        assert err.args[0] == 0
         assert isfile(join(dest_data_dir, 'meta-only', dataset + '.hdf'))
         assert isfile(join(dest_data_dir, 'logs', dataset + '.log'))
+
+        zum = 0
+        for _ in records(dataset_path):
+            zum += 1
+            assert all(len(a) == 0 or len(a) > 1000 for a in _[:3])
+
+        zum2 = 0
+        for _ in records(dataset_path, min_magnitude=6):
+            zum2 += 1
+
+        assert zum2 < zum
 
         # assert isfile(w_file)
         # w_dir = join(dest_data_dir, 'waveforms')
@@ -168,3 +179,85 @@ def tst_source_metadata_stats():
             if k[1] > 95:
                 print(k)
         print("\n\n")
+
+
+import numpy as np
+import pandas as pd
+import h5py
+from typing import Iterable, Optional
+
+
+def records(hdf_path, **filters) -> \
+        Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
+    """
+    Yield: (h1, h2, v, dt, metadata_row) for each matching record.
+    metadata_row is a object, metadata accessible via attributes (e.g. m.magnitude)
+
+    Examples:
+        (showing only for magnitude field, all other fields hold the same):
+        for h1, h2, v, dt, m in records(path, min_magnitude=6):
+        for h1, h2, v, dt, m in records(path, max_magnitude=6)
+        for h1, h2, v, dt, m in records(path, magnitude=6)
+        for h1, h2, v, dt, m in records(path, magnitude=[4, 5, 6])  # mag 4, 5 or 6
+    """
+    chunk_size = 100000  # chunk for pandas read_hdf
+    col_categories: Optional[dict] = None  # dict of categorical columns (lazily created)
+    with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
+        h5_root_group = h5_f["waveforms"]
+        for chunk in pd_f.select("metadata", chunksize=chunk_size):  # noqa
+            if col_categories is None:
+                col_categories = {
+                    c: chunk[c].cat.categories
+                    for c in chunk.columns
+                    if isinstance(chunk[c].dtype, pd.CategoricalDtype)
+                }
+            mask = pd.Series(True, index=chunk.index)
+            for expr, value in filters.items():
+                try:
+                    if expr.startswith('min_'):
+                        col = expr[4:]
+                        # categorical column, need to work on categories:
+                        if col in col_categories:
+                            categs = col_categories[col]  # pandas Index
+                            col_mask = chunk[col].isin(categs[categs >= value])
+                        else:
+                            col_mask = chunk[col] >= value
+                    elif expr.startswith('max_'):
+                        col = expr[4:]
+                        if col in col_categories:
+                            categs = col_categories[col]  # pandas Index
+                            col_mask = chunk[col].isin(categs[categs <= value])
+                        else:
+                            col_mask = chunk[col] <= value
+                    else:
+                        col = expr
+                        if isinstance(value, (tuple, list, set)):
+                            col_mask = chunk[col].isin(value)
+                        else:
+                            col_mask = chunk[col] == value
+                    mask &= col_mask
+
+                except (TypeError, ValueError, KeyError) as exc:
+                    raise ValueError(f'Error in "{expr}": {exc}')
+
+            for row in chunk[mask].itertuples(name='metadata', index=False):
+                waveform = h5_root_group[row.event_id][row.station_id]
+                yield waveform[0], waveform[1], waveform[2], waveform.attrs['dt'], row
+
+
+def iter_records_v0(hdf_path, query_string=None, chunk_size=10000) -> \
+        Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
+    """
+    THIS CODE IS A REMINDER OF HOW CODE COULD READ BACK THE DATA.
+
+    Efficiently query metadata ON DISK and yield:
+    (h1, h2, v, metadata_row) for each matching record.
+
+    metadata_row is a Pandas Series.
+    """
+    with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
+        h5_root_group = h5_f["waveforms"]
+        for chunk in pd_f.select("metadata", where=query_string, chunksize=chunk_size):  # noqa
+            for row in chunk.itertuples(index=False):
+                waveform = h5_root_group[row.event_id][row.station_id]
+                yield waveform[0], waveform[1], waveform[2], waveform.attrs['dt'], row

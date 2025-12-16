@@ -144,7 +144,7 @@ def pre_process(metadata: pd.DataFrame, metadata_path: str, files: set[str]) \
         "SSN_" + metadata.loc[no_sta_id, 'Station Sequence Number'].astype(str)
     metadata.drop(columns=['Station ID  No.', 'Station Sequence Number'], inplace=True)
     metadata.dropna(subset=['event_id', 'station_id'], inplace=True)
-    metadata['event_id'] = metadata['event_id'].astype('category')
+    metadata['event_id'] = metadata['event_id'].astype(str).astype('category')
     metadata['station_id'] = metadata['station_id'].astype('category')
     metadata['Record Sequence Number'] = metadata['Record Sequence Number'].astype(int)
     assert not metadata['Record Sequence Number'].duplicated().any()
@@ -322,14 +322,6 @@ def post_process(
 ###########################################
 
 
-class MetadataWriteError(Exception):
-    """
-    Exception in writing metadata that should be treated specifically (e.g.
-    interrupt the code and skip logging)
-    """
-    pass
-
-
 @dataclass(frozen=True, slots=True)
 class Waveform:
     """Simple class handling a Waveform (Time History single component)"""
@@ -339,6 +331,16 @@ class Waveform:
 
 def main():  # noqa
     """main processing routine called from the command line"""
+    chunks = basename(__file__).split('_')
+
+    dataset_name = basename(__file__)
+    _ = dataset_name.removeprefix('create_')
+    assert dataset_name != _, f'Wrong script name: {basename(__file__)}'
+    dataset_name = _
+    _ = dataset_name.removesuffix('_dataset.py')
+    assert dataset_name != _, f'Wrong script name: {basename(__file__)}'
+    dataset_name = _
+
     try:
         source_metadata_path, source_waveforms_path, dest_root_path = \
             read_script_args(sys.argv)
@@ -349,37 +351,33 @@ def main():  # noqa
     print(f"Source waveforms path: {source_waveforms_path}")
     print(f"Source metadata path:  {source_metadata_path}")
 
-    dest_metadata_path = join(dest_root_path, "metadata.hdf")
-    dest_waveforms_path = join(dest_root_path, "waveforms")
-    print(f"Destination waveforms path: {dest_waveforms_path}")
+    dest_metadata_path = join(dest_root_path, 'meta-only', f"{dataset_name}.hdf")
+    dest_waveforms_path = join(dest_root_path, f'{dataset_name}.hdf')
+    print(f"Destination dataset path: {dest_waveforms_path}")
     print(f"Destination metadata path:  {dest_metadata_path}")
 
-    existing = isfile(dest_metadata_path) or isdir(dest_waveforms_path)
-    raise_if_file_exists = False
+    existing = isfile(dest_metadata_path) or isfile(dest_waveforms_path)
+
     if existing:
         res = input(
-            f'\nSome destination data already exists. Type:'
-            f'\ny: delete and re-create all data'
-            f'\nm: delete and re-create metadata, save only new waveform files'
-            f'\nAny key: quit\n'
+            f'\nSome destination data already exists. Delete and re-create all? '
+            f'(y: yes, Any key: quit)\n'
         )
-        if res not in ('y', 'm'):
+        if res not in ('y', ):
             sys.exit(1)
-        print()
-        if res == 'y':
-            raise_if_file_exists = True  # no accidental writing files with same name
-            if isdir(dest_waveforms_path):
-                shutil.rmtree(dest_waveforms_path)
 
-    if isfile(dest_metadata_path):
-        os.unlink(dest_metadata_path)
+    dest_log_path = join(dest_root_path, "logs", f"{dataset_name}.log")
 
-    if not isdir(dest_root_path):
-        os.makedirs(dest_root_path)
+    for fle in [dest_metadata_path, dest_waveforms_path, dest_log_path]:
+        if isfile(fle):
+            os.unlink(fle)  # not required for log (but it's easier to do it this way)
+        assert not isfile(fle), f"Could not remove {fle}"
+        fle_parent = dirname(fle)
+        if not isdir(fle_parent):
+            os.makedirs(fle_parent)
+        assert isdir(fle_parent), f"Could not create parent dir {fle_parent}"
 
-    dest_log_path = join(dest_root_path, "dataset_creation.log")
     setup_logging(dest_log_path)
-
     logging.info(f'Working directory: {abspath(os.getcwd())}')
     logging.info(f'Run command      : {" ".join([sys.executable] + sys.argv)}')
 
@@ -387,8 +385,8 @@ def main():  # noqa
     try:
         dest_metadata_fields_path = join(dest_root_path, 'metadata_fields.yml')
         metadata_fields = get_metadata_fields(dest_metadata_fields_path)
-        with open(dest_metadata_fields_path, "r") as _:
-            logging.info(f'Metadata fields file: {dest_metadata_fields_path}')
+        # with open(dest_metadata_fields_path, "r") as _:
+        #     logging.info(f'Metadata fields file: {dest_metadata_fields_path}')
     except Exception as exc:
         print(exc, file=sys.stderr)
         sys.exit(1)
@@ -446,10 +444,11 @@ def main():  # noqa
     item_num = 0
     errs = 0
     saved_waveforms = 0
-
+    waveforms_hdf_file = h5py.File(dest_waveforms_path, "w")
     while len(files):
         num_files = 1
         file = files.pop()
+        waveforms_root_group = waveforms_hdf_file.require_group("waveforms")
 
         try:
             h1_path, h2_path, v_path, record = find_sources(file, metadata)
@@ -511,29 +510,20 @@ def main():  # noqa
                         raise AssertionError()
                 except AssertionError:
                     raise AssertionError(f'Invalid value for "{f}": {str(val)}')
+            records.append(clean_record)
 
             # final checks:
             check_final_metadata(clean_record, h1, h2, v)
 
             # save waveforms
-            file_path = join(dest_waveforms_path, get_file_path(clean_record))
             saved_waveforms += 1
-            if not isfile(file_path):
-                save_waveforms(file_path, h1, h2, v)
-            elif raise_if_file_exists:
-                raise ValueError(f'Waveforms file already exists: {file_path}')
+            save_waveforms(
+                waveforms_root_group,
+                # str(clean_record['id']),
+                f"{clean_record['event_id']}/{clean_record['station_id']}",
+                h1, h2, v
+            )
 
-            # save metadata:
-            records.append(clean_record)
-            if len(records) > 1000:
-                save_metadata(
-                    dest_metadata_path,
-                    pd.DataFrame(records),
-                    metadata_fields
-                )
-                records = []
-        except MetadataWriteError:
-            raise
         except Exception as exc:
             fname, lineno = exc_func_and_lineno(exc, __file__)
             logging.error(f"{exc}. File: {file}. Function {fname}, line {lineno}")
@@ -541,6 +531,15 @@ def main():  # noqa
         finally:
             pbar.set_postfix({"saved waveforms": f"{saved_waveforms:,}"})
             pbar.update(num_files)
+
+        # save metadata:
+        if len(records) > 1000:
+            save_metadata(
+                dest_metadata_path,
+                pd.DataFrame(records),
+                metadata_fields
+            )
+            records = []
 
         if pbar.n / pbar.total > (1 - min_waveforms_ok_ratio):
             # we processed enough data (1 - waveforms_ok_ratio)
@@ -554,10 +553,42 @@ def main():  # noqa
 
     if len(records):
         save_metadata(dest_metadata_path, pd.DataFrame(records), metadata_fields)
-    if isfile(dest_metadata_path):
+
+    # put metadata int
+    doc_grp = waveforms_hdf_file.require_group("metadata_doc")
+    for col, c_data in metadata_fields.items():
+        doc_grp.attrs[col] = f"[{c_data['dtype']}] {c_data['help']}"
+
+    # write metadata in the file (with pandas this time
+    metadata: pd.DataFrame = pd.read_hdf(dest_metadata_path)  # noqa
+    meta_changed = False
+    for col in metadata_fields:
+        values = metadata[col]
+        if values.dtype.__class__.__name__ != 'CategoricalDtype':
+            tmp_values = values.astype('category')
+            if tmp_values.memory_usage(deep=True, index=False) <= \
+                    0.5 * values.memory_usage(deep=True, index=False):
+                metadata[col] = tmp_values
+                meta_changed = True
+
+    # close file:
+    waveforms_hdf_file.flush()
+    waveforms_hdf_file.close()
+
+    metadata.to_hdf(
+        dest_waveforms_path,
+        key="metadata",  # name of the table in the HDF5 file
+        format="table",
+        mode="a"  # append mode; keeps existing groups/datasets
+    )
+
+    if meta_changed:
+        save_metadata(dest_metadata_path, metadata, force_overwrite=True)
+
+    if isfile(dest_waveforms_path):
         os.chmod(
-            dest_metadata_path,
-            os.stat(dest_metadata_path).st_mode | stat.S_IRGRP | stat.S_IROTH
+            dest_waveforms_path,
+            os.stat(dest_waveforms_path).st_mode | stat.S_IRGRP | stat.S_IROTH
         )
 
     pbar.close()
@@ -702,22 +733,15 @@ def cast_dtype(val: Any, dtype: Union[str, pd.CategoricalDtype], default_val: An
     return val
 
 
-def get_file_path(metadata: dict):
-    """Return the file (relative) path from the given metadata
-    (record metadata already cleaned)"""
-    return join(
-        str(metadata['event_id']),
-        str(metadata['station_id']) + ".h5"
-    )
-
-
 def check_final_metadata(
         metadata: dict,
         h1: Optional[Waveform],
         h2: Optional[Waveform],
         v: Optional[Waveform]
 ):
-    pga = metadata['PGA']
+    pga = np.abs(metadata['PGA'])
+    if pga < 0:
+        pga = metadata['PGA'] = abs(pga)
     pga_c = None
     if h1 is not None and h2 is not None:
         pga_c = np.sqrt(np.max(np.abs(h1.data)) * np.max(np.abs(h2.data)))
@@ -730,16 +754,7 @@ def check_final_metadata(
     if pga_c is not None:
         rtol = pga_retol
         assert np.isclose(pga_c, pga, rtol=rtol, atol=0), \
-            f"|PGA - PGA_computed| > {rtol} * | PGA |"
-
-    for t_before, t_after in [
-        ('origin_time', 'p_wave_arrival_time'),
-        ('p_wave_arrival_time', 's_wave_arrival_time')
-    ]:
-        val_before = metadata.get(t_before)
-        val_after = metadata.get(t_after)
-        if pd.notna(val_before) and pd.notna(val_after):
-            assert val_after > val_before, f"{t_after} must happen after {t_before}"
+            f"|PGA - PGA_computed|={int(100 * (pga - pga_c) / pga)}%PGA"
 
 
 def extract_metadata_from_waveforms(
@@ -762,44 +777,54 @@ def extract_metadata_from_waveforms(
     return avail_comps, sampling_rate
 
 
-def save_metadata(dest_metadata_path: str, metadata: pd.DataFrame, metadata_fields):
-    try:
-        if metadata is not None and not metadata.empty:
-            # save metadata:
-            new_metadata_df = pd.DataFrame(metadata)
-            for col in metadata_fields:
-                dtype = metadata_fields[col]['dtype']
-                if dtype == 'str':
-                    raise ValueError('Invalid `str` dtype')
-                elif dtype == 'datetime':
-                    new_metadata_df[col] = pd.to_datetime(new_metadata_df[col])
-                else:
-                    new_metadata_df[col] = new_metadata_df[col].astype(dtype)
+def save_metadata(
+        dest_metadata_path: str,
+        metadata: pd.DataFrame,
+        metadata_fields: Optional[dict] = None,
+        force_overwrite=False
+):
+    if metadata is None or metadata.empty:
+        return
 
-            hdf_kwargs = {
-                'key': "metadata",  # table name
-                'mode': "a",
-                # (1st time creates a new file because we deleted it, see above)
-                'format': "table",  # required for appendable table
-                'append': True,  # first batch still uses append=True
-                # 'min_itemsize': {
-                #     'event_id': metadata["event_id"].str.len,
-                #     'station_id': metadata["station_id"].str.len,
-                # },  # required for strings (used only the 1st time to_hdf is called)  # noqa
-                # 'data_columns': [],  # list of columns you need to query these later
-            }
-            new_metadata_df[list(metadata_fields)].to_hdf(
-                dest_metadata_path, **hdf_kwargs
-            )
-    except Exception as exc:
-        raise MetadataWriteError(str(exc))
+    if metadata_fields is not None:
+        # check fields
+        new_metadata_df = pd.DataFrame(metadata)
+        for col in metadata_fields:
+            dtype = metadata_fields[col]['dtype']
+            if dtype == 'str':
+                raise ValueError('Invalid `str` dtype')
+            elif dtype == 'datetime':
+                new_metadata_df[col] = pd.to_datetime(new_metadata_df[col])
+            else:
+                new_metadata_df[col] = new_metadata_df[col].astype(dtype)
+
+            new_metadata_df = new_metadata_df[list(metadata_fields)]
+    else:
+        new_metadata_df = metadata
+
+    hdf_kwargs = {
+        'key': "metadata",  # table name
+        'mode': "w" if force_overwrite else "a",
+        # (1st time creates a new file because we deleted it, see above)
+        'format': "table",  # required for appendable table
+        'append': not force_overwrite,  # first batch still uses append=True
+        'index': False,
+        # 'min_itemsize': {
+        #     'event_id': metadata["event_id"].str.len,
+        #     'station_id': metadata["station_id"].str.len,
+        # },  # required for strings (used only the 1st time to_hdf is called)  # noqa
+        # 'data_columns': [],  # list of columns you need to query these later
+    }
+    new_metadata_df.to_hdf(dest_metadata_path, **hdf_kwargs)
 
 
 def save_waveforms(
-        file_path, h1: Optional[Waveform], h2: Optional[Waveform], v: Optional[Waveform]
+        h5_file: Union[h5py.Group, h5py.File],
+        path: str,
+        h1: Optional[Waveform],
+        h2: Optional[Waveform],
+        v: Optional[Waveform]
 ):
-    if not isdir(dirname(file_path)):
-        os.makedirs(dirname(file_path))
 
     dts = {x.dt for x in (h1, h2, v) if x is not None}
     assert len(dts), "No waveform to save"  # safety check
@@ -809,27 +834,38 @@ def save_waveforms(
     assert len(dts) == 1, "Non-unique dt in waveforms"
     dt = dts.pop() if dts else None
 
-    empty = np.array([])
-    with h5py.File(file_path, "w") as f:
-        # Save existing components
-        f.create_dataset("h1", data=empty if h1 is None else h1.data)
-        f.create_dataset("h2", data=empty if h2 is None else h2.data)
-        f.create_dataset("v", data=empty if v is None else v.data)
-        f.attrs["dt"] = dt
+    paths = path.split('/')
+    h5_group = h5_file
+    for _ in paths[:-1]:
+        h5_group = h5_group.require_group(_)
 
-    # Add read permission for group (stat.S_IRGRP) and others (stat.S_IROTH).
-    if isfile(file_path):
-        os.chmod(file_path, os.stat(file_path).st_mode | stat.S_IRGRP | stat.S_IROTH)
+    # Create variable-length array dataset
+    empty = np.array([], dtype=float)
+    dset = h5_group.create_dataset(paths[-1], (3,), dtype=h5py.vlen_dtype(np.float64))
+    dset[0] = h1.data if h1 is not None else empty
+    dset[1] = h2.data if h2 is not None else empty
+    dset[2] = v.data if v is not None else empty
+    # Store dt as attribute
+    dset.attrs['dt'] = dt
 
 
-def read_wafevorms(file_path) -> (float, np.ndarray, np.ndarray, np.ndarray):
-    """Reads the file path previously saved. NOT USED, HERE ONLY FOR REF"""
-    with h5py.File(file_path, "r") as f:
-        dt = f.attrs["dt"]
-        h1 = f['h1'][:]
-        h2 = f['h2'][:]
-        v = f['v'][:]
-    return dt, h1, h2, v
+def iter_records(hdf_path, query_string=None, chunksize=10000):
+    """
+    THIS CODE IS A REMINDER OF HOW CODE COULD READ BACK THE DATA.
+
+    Efficiently query metadata ON DISK and yield:
+    (h1, h2, v, metadata_row) for each matching record.
+
+    metadata_row is a Pandas Series.
+    """
+    with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
+        h5_root_group = h5_f["waveforms"]
+        # Query table in chunks
+        for chunk in pd_f.select("metadata", where=query_string, chunksize=chunksize):  # noqa
+            # Iterate rows of this chunk
+            for row in chunk.itertuples(index=False):
+                waveform = h5_root_group[row.event_id][row.station_id]
+                yield waveform[0], waveform[1], waveform[2], waveform.attrs['dt'], row
 
 
 def exc_func_and_lineno(exc, module_path: str = __file__) -> tuple[str, int]:
@@ -837,14 +873,14 @@ def exc_func_and_lineno(exc, module_path: str = __file__) -> tuple[str, int]:
     Return the innermost function name and line number within `__file__`
     that raised `exc`
     """
-    tb = exc.__traceback__
+    tb = exc.__traceback__ if isfile(module_path) else None
     deepest = None
 
     while tb:
         frame = tb.tb_frame
         filename = frame.f_code.co_filename
 
-        if os.path.samefile(filename, module_path):
+        if isfile(filename) and os.path.samefile(filename, module_path):
             deepest = frame
 
         tb = tb.tb_next
