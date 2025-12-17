@@ -2,7 +2,7 @@
 generation of harmonized ground truth datasets of processed ground motion data and 
 metadata which can then feed Deep- and Machine-learning applications.
 
-This package is n ot intended for public use: the source data is not available
+This package is not intended for public use: the source data is not available
 publicly for rights and size issues. Please contact the author for questions
 
 # Installation
