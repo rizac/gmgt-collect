@@ -102,11 +102,17 @@ destination: "{dest_data_dir}"
             zum += 1
             assert all(len(a) == 0 or len(a) > 1000 for a in _[:3])
 
-        zum2 = 0
-        for _ in records(dataset_path, min_magnitude=6):
-            zum2 += 1
-
-        assert zum2 < zum
+        filters_less_than = 0
+        for k, v in [
+            ('missing_', False), ('max_', 6), ('min_', 5.5), ('', 5.5), ('', [4.5, 5])
+        ]:
+            zum2 = 0
+            for _ in records(dataset_path, **{k+'magnitude': v}):
+                zum2 += 1
+            assert zum2 <= zum
+            if zum2 < zum:
+                filters_less_than += 1
+        assert filters_less_than >= 3
 
         # assert isfile(w_file)
         # w_dir = join(dest_data_dir, 'waveforms')
@@ -190,45 +196,58 @@ from typing import Iterable, Optional
 def records(hdf_path, **filters) -> \
         Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
     """
-    Yield: (h1, h2, v, dt, metadata_row) for each matching record.
-    metadata_row is a object, metadata accessible via attributes (e.g. m.magnitude)
+    Yield: (h1, h2, v, dt, metadata) for each matching record. The first three elements
+    denote the record data (time history) and are numpy arrays of acceleration in m/s**2
+    (first two horizontal and vertical component, respectively): empty arrays mean the
+    component is not available. `dt` is the float denoting the data sampling interval
+    (in s), and metadata is quite self-explanatory (you can access all metadata as
+    normal attributes, e.g. `metadata.magnitude`)
 
-    Examples:
-        (showing only for magnitude field, all other fields hold the same):
-        for h1, h2, v, dt, m in records(path, min_magnitude=6):
-        for h1, h2, v, dt, m in records(path, max_magnitude=6)
-        for h1, h2, v, dt, m in records(path, magnitude=6)
-        for h1, h2, v, dt, m in records(path, magnitude=[4, 5, 6])  # mag 4, 5 or 6
+    :param filters: a keyword argument whose parameters are any metadata fields,
+        optionally prefixed with 'min_', 'max_' and 'missing_' mapped to a matching
+        values in order to filter specific metadata row and yield only the corresponding
+        data. Values cannot be None / nan, NaT: to get those values, use the 'missing_'
+        prefix:, e.g. type `missing_magnitude: False` to yield only records where the
+        magnitude is provided (not N/A). Values can also be list/tuples, in this case
+        records whose fields are equal to any value in the list/tuple will be yielded
+
+        Examples:
+            for h1, h2, v, dt, m in records(path, min_magnitude=6):
+            for h1, h2, v, dt, m in records(path, max_magnitude=6)
+            for h1, h2, v, dt, m in records(path, magnitude=6)
+            for h1, h2, v, dt, m in records(path, magnitude=[4, 5, 6])
     """
     chunk_size = 100000  # chunk for pandas read_hdf
-    col_categories: Optional[dict] = None  # dict of categorical columns (lazily created)
+
     with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
         h5_root_group = h5_f["waveforms"]
         for chunk in pd_f.select("metadata", chunksize=chunk_size):  # noqa
-            if col_categories is None:
-                col_categories = {
-                    c: chunk[c].cat.categories
-                    for c in chunk.columns
-                    if isinstance(chunk[c].dtype, pd.CategoricalDtype)
-                }
             mask = pd.Series(True, index=chunk.index)
             for expr, value in filters.items():
                 try:
                     if expr.startswith('min_'):
                         col = expr[4:]
                         # categorical column, need to work on categories:
-                        if col in col_categories:
-                            categs = col_categories[col]  # pandas Index
+                        if isinstance(chunk[col].dtype, pd.CategoricalDtype):
+                            categs = chunk[col].cat.categories  # pandas Index
                             col_mask = chunk[col].isin(categs[categs >= value])
                         else:
                             col_mask = chunk[col] >= value
                     elif expr.startswith('max_'):
                         col = expr[4:]
-                        if col in col_categories:
-                            categs = col_categories[col]  # pandas Index
+                        if isinstance(chunk[col].dtype, pd.CategoricalDtype):
+                            categs = chunk[col].cat.categories  # pandas Index
                             col_mask = chunk[col].isin(categs[categs <= value])
                         else:
                             col_mask = chunk[col] <= value
+                    elif expr.startswith('missing_'):
+                        col = expr[8:]
+                        if value is True:
+                            col_mask = chunk[col].isna()
+                        elif value is False:
+                            col_mask = chunk[col].notna()
+                        else:
+                            raise ValueError(f'True/False expected, found {value}')
                     else:
                         col = expr
                         if isinstance(value, (tuple, list, set)):
@@ -237,7 +256,7 @@ def records(hdf_path, **filters) -> \
                             col_mask = chunk[col] == value
                     mask &= col_mask
 
-                except (TypeError, ValueError, KeyError) as exc:
+                except (TypeError, ValueError, KeyError, AssertionError) as exc:
                     raise ValueError(f'Error in "{expr}": {exc}')
 
             for row in chunk[mask].itertuples(name='metadata', index=False):
