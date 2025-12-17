@@ -1,6 +1,9 @@
-A package containing scripts for the generation of
-harmonized time histories (accelerometers) datasets from heterogeneous
-sources
+(G)round (M)otion (G)round (T)ruth - collect is a collection of scripts for the 
+generation of harmonized ground truth datasets of processed ground motion data and 
+metadata which can then feed Deep- and Machine-learning applications.
+
+This package is n ot intended for public use: the source data is not available
+publicly for rights and size issues. Please contact the author for questions
 
 # Installation
 
