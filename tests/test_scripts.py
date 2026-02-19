@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 
 dest_data_dir = join(abspath(dirname(__file__)), 'tmp.datasets')
-source_data_dir = join(abspath(dirname(__file__)), 'source_data')
+# source_data_dir = join(abspath(dirname(__file__)), 'source_data')
 
 
 def tearDown():
@@ -39,14 +39,14 @@ def setup_teardown():
     tearDown()
 
 
-def run_(dataset: str, metadata_file_name: str):
-    # dataset is ngawest, esm, kinet_knet
-    src_data_dir = join(source_data_dir, dataset)
+def run_(module_name:str, dataset: str, src_metadata_path: str, src_data_dir: str):
+    # dataset is ngawest, esm, kik knet
+    src_data_dir = os.path.expanduser(src_data_dir)
     assert isdir(src_data_dir)
-    src_metadata_path = join(src_data_dir, metadata_file_name)
+    src_metadata_path = os.path.expanduser(src_metadata_path)
     assert isfile(src_metadata_path)
 
-    config_path = join(dest_data_dir, f"{dataset}.config.yml")
+    config_path = join(dest_data_dir, f"{dataset}.yml")
 
     with open(config_path, 'w') as _:
         _.write(f"""
@@ -54,7 +54,6 @@ source_metadata: "{src_metadata_path}"
 source_data: "{src_data_dir}"
 destination: "{dest_data_dir}"
 """)
-    module_name = f"create_{dataset}_dataset"
     try:
         # project_root = abspath(dirname(dirname(__file__)))
         # os.chdir(project_root)
@@ -94,8 +93,8 @@ destination: "{dest_data_dir}"
         assert sizes['metadata'] > 150000
         assert sizes['waveforms'] > 10
 
-        assert isfile(join(dest_data_dir, 'meta-only', dataset + '.hdf'))
-        assert isfile(join(dest_data_dir, 'logs', dataset + '.log'))
+        assert isfile(join(dest_data_dir, dataset, f'{dataset}.meta.only.hdf'))
+        assert isfile(join(dest_data_dir, dataset, dataset + '.log'))
 
         zum = 0
         for _ in records(dataset_path):
@@ -151,16 +150,37 @@ def hdf_dataset_sizes(file_path):
     return sizes
 
 
-def test_nga_west2():
-    run_('ngawest2', 'Updated_NGA_West2_Flatfile_RotD50_d005_public_version.csv')
+def test_ngawest2():
+    run_(
+        'create_ngawest2_dataset',
+        'ngawest2',
+        '~/Nextcloud/gmgt/source_data/ngawest2/Updated_NGA_West2_Flatfile_RotD50_d005_public_version.csv',
+        '~/Nextcloud/gmgt/gmgt-collect-test-data/ngawest2'
+    )
 
+def test_kik():
+    run_(
+        'create_kik_knet_dataset',
+        'kik',
+        '~/Nextcloud/gmgt/source_data/kik/2025-001_Loviknes-et-al_1997_2024_kik_Oct24META.csv',
+        "~/Nextcloud/gmgt/gmgt-collect-test-data/kik"
+    )
 
 def test_knet():
-    run_('kiknet_knet', "2025-001_Loviknes-et-al_1996_2024_knet_Oct24META.csv")
-
+    run_(
+        'create_kik_knet_dataset',
+        'knet',
+        '~/Nextcloud/gmgt/source_data/kik/2025-001_Loviknes-et-al_1996_2024_knet_Oct24META.csv',
+        "~/Nextcloud/gmgt/gmgt-collect-test-data/knet"
+    )
 
 def test_esm():
-    run_('esm', 'ESM_flatfile_SA.csv')
+    run_(
+        'create_esm_dataset',
+        'esm',
+        '~/Nextcloud/gmgt/source_data/esm/ESM_flatfile_SA.csv',
+        '~/Nextcloud/gmgt/gmgt-collect-test-data/esm'
+    )
 
 
 def tst_source_metadata_stats():
