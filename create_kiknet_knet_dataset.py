@@ -207,6 +207,8 @@ def find_sources(file_path: str, metadata: pd.DataFrame) \
     else:
         return None, None, None, None
 
+    if file_path[-1] in ('1', '2'):
+        asd = 9
     record: Optional[pd.Series] = None
     try:
         ev_ids = [int(basename(dirname(file_path))), basename(dirname(file_path))]

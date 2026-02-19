@@ -21,7 +21,7 @@ publicly for rights and size issues. Please contact the author for questions
 
 - Install required packages (add any package of your choice if needed):
   ```
-  pip install --upgrade pip setuptools && pip install pandas h5py pyyaml tables tqdm
+  pip install --upgrade pip setuptools && pip install "pandas<3" h5py pyyaml tables tqdm
   ```
    <!-- pip install --upgrade pip setuptools && pip install obspy pandas pyyaml tqdm -->
 
