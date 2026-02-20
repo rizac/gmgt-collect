@@ -24,83 +24,81 @@ def accept_file(file_path) -> bool:
     return splitext(file_path)[1].startswith('.ASC')
 
 
-# csv arguments for source metadata (e/g. 'header'= None)
-source_metadata_csv_args = {
-    'sep': ';'
-    # 'header': None  # for CSVs with no header
-    # 'dtype': {}  # NOT RECOMMENDED, see `metadata_fields.yml` instead
-    # 'usecols': []  # NOT RECOMMENDED, see `source_metadata_fields` below instead
-}
+def read_metadata(source_metadata_path: str, files: set[str]) -> pd.DataFrame:
+    """
+    Read and optionally pre-process the metadata Dataframe (e.g., setup index
+    to easily find records from file names, optimize some column data like
+    converting strings to categorical).
 
-# Mapping from source metadata columns to their new names. Map to None to skip renaming
-# and just load the column data
-source_metadata_fields = {
-    'event_id': "event_id",
-    "network_code" :None,
-    "station_code": None,
-    "location_code": None,
-    "instrument_code": None,
-
-    "epi_dist": "epicentral_distance",
-    # "?": "hypocentral_distance",
-    "JB_dist": "joyner_boore_distance",
-    "rup_dist": "rupture_distance",
-    "Rx_dist": "fault_normal_distance",
-    'event_time': "origin_time",
-
-    "ev_latitude": "event_latitude",
-    "ev_longitude": "event_longitude",
-    "ev_depth_km": "event_depth",
-    "EMEC_Mw": "magnitude",
-    "Mw": None,
-    "ML": None,
-    "Ms": None,
-    "es_z_top": "depth_to_top_of_fault_rupture",
-    "es_width": "fault_rupture_width",
-    "es_strike": "strike",
-    "es_dip": "dip",
-    "es_rake": "rake",
-
-    "fm_type_code": "fault_type",
-    "vs30_m_sec": "vs30",
-    'vs30_meas_type': None,
-    'vs30_m_sec_WA': None,
-
-    # vs30measured is a boolean expression; treated as key
-    # "Measured/Inferred Class": "vs30measured",
-    "st_latitude": "station_latitude",
-    "st_longitude": "station_longitude",
-    # "Northern CA/Southern CA - H11 Z1 (m)": "z1",
-    # "Northern CA/Southern CA - H11 Z2.5 (m)": "z2pt5",
-
-    'U_channel_code': None,
-    'W_channel_code': None,
-    'V_channel_code': None,
-    'U_hp': None,
-    'V_hp': None,
-    'W_hp': None,
-    'U_lp': None,
-    'V_lp': None,
-    'W_lp': None,
-
-    'rotD50_pga': 'PGA',
-}
-
-
-def pre_process(
-    metadata: pd.DataFrame, metadata_path: str, files: set[str]
-) -> pd.DataFrame:
-    """Pre-process the metadata Dataframe. This is usually the place where the given
-    dataframe is setup in order to easily find records from file names, or optimize
-    some column data (e.g. convert strings to categorical).
-
-    :param metadata: the metadata DataFrame. The DataFrame columns come from the global
-        `source_metadata_fields` dict, using each value if not None, otherwise its key.
-    :param metadata_path: the file path of the metadata DataFrame
+    :param source_metadata_path: the source metadata path (usually CSV)
     :param files: a set of file paths as returned from `scan_dir`
 
     :return: a pandas DataFrame optionally modified from `metadata`
     """
+
+    # Mapping from source metadata columns to their new names. Map to None to skip renaming
+    # and just load the column data
+    source_metadata_fields = {
+        'event_id': "event_id",
+        "network_code" :None,
+        "station_code": None,
+        "location_code": None,
+        "instrument_code": None,
+
+        "epi_dist": "epicentral_distance",
+        # "?": "hypocentral_distance",
+        "JB_dist": "joyner_boore_distance",
+        "rup_dist": "rupture_distance",
+        "Rx_dist": "fault_normal_distance",
+        'event_time': "origin_time",
+
+        "ev_latitude": "event_latitude",
+        "ev_longitude": "event_longitude",
+        "ev_depth_km": "event_depth",
+        "EMEC_Mw": "magnitude",
+        "Mw": None,
+        "ML": None,
+        "Ms": None,
+        "es_z_top": "depth_to_top_of_fault_rupture",
+        "es_width": "fault_rupture_width",
+        "es_strike": "strike",
+        "es_dip": "dip",
+        "es_rake": "rake",
+
+        "fm_type_code": "fault_type",
+        "vs30_m_sec": "vs30",
+        'vs30_meas_type': None,
+        'vs30_m_sec_WA': None,
+
+        # vs30measured is a boolean expression; treated as key
+        # "Measured/Inferred Class": "vs30measured",
+        "st_latitude": "station_latitude",
+        "st_longitude": "station_longitude",
+        # "Northern CA/Southern CA - H11 Z1 (m)": "z1",
+        # "Northern CA/Southern CA - H11 Z2.5 (m)": "z2pt5",
+
+        'U_channel_code': None,
+        'W_channel_code': None,
+        'V_channel_code': None,
+        'U_hp': None,
+        'V_hp': None,
+        'W_hp': None,
+        'U_lp': None,
+        'V_lp': None,
+        'W_lp': None,
+
+        'rotD50_pga': 'PGA',
+        'st_elevation': 'station_elevation',
+        'sensor_depth_m': 'station_depth'
+    }
+
+    metadata:pd.DataFrame = pd.read_csv(
+        source_metadata_path, sep=';', usecols=list(source_metadata_fields.keys())
+    )
+    metadata = metadata.rename(
+        columns={k: v for k, v in source_metadata_fields.items() if v is not None}
+    )
+
     cols = ["network_code", "station_code", "location_code", "instrument_code"]
     for c in cols:
         metadata[c] = metadata[c].astype(str)

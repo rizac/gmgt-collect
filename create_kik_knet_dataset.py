@@ -14,7 +14,6 @@ import pandas as pd
 import numpy as np
 # scripts common module:
 from common import Waveform
-from create_esm_dataset import source_metadata_fields
 
 
 def accept_file(file_path) -> bool:
@@ -119,8 +118,8 @@ def read_metadata(source_metadata_path: str, files: set[str]) -> pd.DataFrame:
     #  'PGD_EW_B', 'PGD_NS_B', 'PGA_rotd50_B', 'PGV_rotd50_B', 'PGD_rotd50_B']
 
     metadata = pd.read_csv(
-        source_metadata_path, skiprows=3, usecols=source_metadata_fields.keys()
-    )  # noqa
+        source_metadata_path, skiprows=3, usecols=list(source_metadata_fields.keys())
+    )
     metadata = metadata.rename(
         columns={k: v for k, v in source_metadata_fields.items() if v is not None}
     )
@@ -237,28 +236,24 @@ def find_sources(
     else:
         return None, None, None, None
 
-    station_suffix = ''
-    if file_path[-1:] in {'1', '2'}:
-        station_suffix = borehole_suffix
 
-    record: Optional[pd.Series] = None
     ev_id = basename(dirname(file_path))
     sta_id = basename(root)[:6]  # station name is first 6 letters
     if file_path[-1:] == '1':
         sta_id += borehole_suffix
-    else:
-        f = 9
 
+    record: Optional[pd.Series] = None
     try:
         record = metadata.loc[(ev_id, sta_id)].copy()
         if not isinstance(record, pd.Series):  # multiple instances (safety check)
+            record = None
             raise KeyError()
         record["station_id"] = sta_id
         record["event_id"] = str(ev_id)
     except KeyError:
         pass
 
-    return paths + (record, )
+    return paths[0], paths[1], paths[2], record
 
 
 def read_waveform(file_path: str, content: BytesIO, metadata: pd.Series) -> Waveform:

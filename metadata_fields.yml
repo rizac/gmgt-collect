@@ -148,6 +148,12 @@ station_latitude:
 station_longitude:
   dtype: float
   help: station longitude (deg), in [-180, 180] [Mandatory]
+station_elevation:
+  dtype: float
+  help: station elevation (altitude), in m >=0
+station_depth:
+  dtype: float
+  help: station (or recording sensor) depth relative to the surface, in m >=0
 region:
   dtype: [0, 1, 2, 3, 4, 5]
   help: >-

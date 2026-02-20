@@ -134,35 +134,6 @@ def main(py_script):  # noqa
     msg = (
         f'{len(metadata):,} record(s), {len(metadata.columns):,} field(s) per record'
     )
-
-    # csv_args: dict[str, Any] = dict(source_metadata_csv_args)
-    # # csv_args.setdefault('chunksize', 10000)
-    # csv_args.setdefault(
-    #     'usecols', csv_args.get('usecols', {}) | source_metadata_fields.keys()
-    # )
-    # with warnings.catch_warnings(record=True) as _w_:
-    #     warnings.simplefilter("always", pd.errors.DtypeWarning)
-    #     metadata = pd.read_csv(source_metadata_path, **csv_args)
-    #     if _w_:
-    #         print(f'({_w_[0].message})', end=" ", flush=True)
-    # metadata = metadata.rename(
-    #     columns={k: v for k, v in source_metadata_fields.items() if v is not None}
-    # )
-    # old_len = len(metadata)
-    # with warnings.catch_warnings():
-    #     warnings.simplefilter("ignore", category=pd.errors.SettingWithCopyWarning)
-    #     metadata = pre_process(metadata, source_metadata_path, files).copy()
-    #
-    # for col in ['event_id', 'station_id']:
-    #     assert isinstance(metadata[col].dtype, pd.CategoricalDtype)
-    #     metadata_fields[col]['dtype'] = metadata[col].dtype
-    #
-    # if len(metadata) < old_len:
-    #     logging.warning(f'{old_len - len(metadata)} metadata row(s) '
-    #                     f'removed in pre-processing stage')
-    # msg = (f'{len(metadata):,} record(s), '
-    #        f'{len(metadata.columns):,} field(s) per record, '
-    #        f'{old_len - len(metadata)} row(s) removed in pre-process')
     print(msg)
     logging.info(msg)
 

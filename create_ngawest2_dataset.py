@@ -34,81 +34,78 @@ def accept_file(file_path) -> bool:
     return False
 
 
-# csv arguments for source metadata (e/g. 'header'= None)
-source_metadata_csv_args = {
-    # 'header': None  # for CSVs with no header
-    # 'dtype': {}  # NOT RECOMMENDED, see `metadata_fields.yml` instead
-    # 'usecols': []  # NOT RECOMMENDED, see `source_metadata_fields` below instead
-}
+def read_metadata(source_metadata_path: str, files: set[str]) -> pd.DataFrame:
+    """
+    Read and optionally pre-process the metadata Dataframe (e.g., setup index
+    to easily find records from file names, optimize some column data like
+    converting strings to categorical).
 
-# Mapping from source metadata columns to their new names. Map to None to skip renaming
-# and just load the column data
-source_metadata_fields = {
-    'EQID': "event_id",
-    'Station ID  No.': None,
-    "Station Sequence Number": None,
-
-    # "fpath_h1": None,
-    # "fpath_h2": None,
-    # "fpath_v": None,
-    'Record Sequence Number': None,
-
-    "EpiD (km)": "epicentral_distance",
-    "HypD (km)": "hypocentral_distance",
-    "Joyner-Boore Dist. (km)": "joyner_boore_distance",
-    "ClstD (km)": "rupture_distance",
-    "Rx": "fault_normal_distance",
-    'YEAR': None,
-    'MODY': None,
-    'HRMN': None,
-    "Hypocenter Latitude (deg)": "event_latitude",
-    "Hypocenter Longitude (deg)": "event_longitude",
-    "Hypocenter Depth (km)": "event_depth",
-    "Earthquake Magnitude": "magnitude",
-    "Magnitude Type": "magnitude_type",
-    "Depth to Top Of Fault Rupture Model": "depth_to_top_of_fault_rupture",
-    "Fault Rupture Width (km)": "fault_rupture_width",
-    "Strike (deg)": "strike",
-    "Dip (deg)": "dip",
-    "Rake Angle (deg)": "rake",
-
-    "Mechanism Based on Rake Angle": "fault_type",
-    "Vs30 (m/s) selected for analysis": "vs30",
-    # vs30measured is a boolean expression; treated as key
-    "Measured/Inferred Class": "vs30measured",
-    "Station Latitude": "station_latitude",
-    "Station Longitude": "station_longitude",
-    "Northern CA/Southern CA - H11 Z1 (m)": "z1",
-    "Northern CA/Southern CA - H11 Z2.5 (m)": "z2pt5",
-
-    "Type of Filter": "filter_type",
-    "npass": None,
-    "nroll": None,
-    "HP-H1 (Hz)": "lower_cutoff_frequency_h1",
-    "HP-H2 (Hz)": "lower_cutoff_frequency_h2",
-    "LP-H1 (Hz)": "upper_cutoff_frequency_h1",
-    "LP-H2 (Hz)": "upper_cutoff_frequency_h2",
-    "Lowest Usable Freq - H1 (Hz)": "lowest_usable_frequency_h1",
-    "Lowest Usable Freq - H2 (H2)": "lowest_usable_frequency_h2",
-
-    "PGA (g)": "PGA"
-}
-
-
-def pre_process(
-    metadata: pd.DataFrame, metadata_path: str, files: set[str]
-) -> pd.DataFrame:
-    """Pre-process the metadata Dataframe. This is usually the place where the given
-    dataframe is setup in order to easily find records from file names, or optimize
-    some column data (e.g. convert strings to categorical).
-
-    :param metadata: the metadata DataFrame. The DataFrame columns come from the global
-        `source_metadata_fields` dict, using each value if not None, otherwise its key.
-    :param metadata_path: the file path of the metadata DataFrame
+    :param source_metadata_path: the source metadata path (usually CSV)
     :param files: a set of file paths as returned from `scan_dir`
 
     :return: a pandas DataFrame optionally modified from `metadata`
     """
+
+    # Mapping from source metadata columns to their new names. Map to None to skip renaming
+    # and just load the column data
+    source_metadata_fields = {
+        'EQID': "event_id",
+        'Station ID  No.': None,
+        "Station Sequence Number": None,
+
+        # "fpath_h1": None,
+        # "fpath_h2": None,
+        # "fpath_v": None,
+        'Record Sequence Number': None,
+
+        "EpiD (km)": "epicentral_distance",
+        "HypD (km)": "hypocentral_distance",
+        "Joyner-Boore Dist. (km)": "joyner_boore_distance",
+        "ClstD (km)": "rupture_distance",
+        "Rx": "fault_normal_distance",
+        'YEAR': None,
+        'MODY': None,
+        'HRMN': None,
+        "Hypocenter Latitude (deg)": "event_latitude",
+        "Hypocenter Longitude (deg)": "event_longitude",
+        "Hypocenter Depth (km)": "event_depth",
+        "Earthquake Magnitude": "magnitude",
+        "Magnitude Type": "magnitude_type",
+        "Depth to Top Of Fault Rupture Model": "depth_to_top_of_fault_rupture",
+        "Fault Rupture Width (km)": "fault_rupture_width",
+        "Strike (deg)": "strike",
+        "Dip (deg)": "dip",
+        "Rake Angle (deg)": "rake",
+
+        "Mechanism Based on Rake Angle": "fault_type",
+        "Vs30 (m/s) selected for analysis": "vs30",
+        # vs30measured is a boolean expression; treated as key
+        "Measured/Inferred Class": "vs30measured",
+        "Station Latitude": "station_latitude",
+        "Station Longitude": "station_longitude",
+        "Northern CA/Southern CA - H11 Z1 (m)": "z1",
+        "Northern CA/Southern CA - H11 Z2.5 (m)": "z2pt5",
+
+        "Type of Filter": "filter_type",
+        "npass": None,
+        "nroll": None,
+        "HP-H1 (Hz)": "lower_cutoff_frequency_h1",
+        "HP-H2 (Hz)": "lower_cutoff_frequency_h2",
+        "LP-H1 (Hz)": "upper_cutoff_frequency_h1",
+        "LP-H2 (Hz)": "upper_cutoff_frequency_h2",
+        "Lowest Usable Freq - H1 (Hz)": "lowest_usable_frequency_h1",
+        "Lowest Usable Freq - H2 (H2)": "lowest_usable_frequency_h2",
+
+        "PGA (g)": "PGA"
+    }
+
+    metadata: pd.DataFrame = pd.read_csv(
+        source_metadata_path, usecols=list(source_metadata_fields.keys())
+    )
+    metadata = metadata.rename(
+        columns={k: v for k, v in source_metadata_fields.items() if v is not None}
+    )
+
     # set event and station categorical (save space)
     no_sta_id = metadata['Station ID  No.'].str.startswith("-999")
     metadata['station_id'] = metadata['Station ID  No.']

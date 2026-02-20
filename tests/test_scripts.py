@@ -2,25 +2,16 @@ import importlib
 import importlib.util
 import shutil
 import os
-import sys
-import h5py
 from os.path import dirname, join, abspath, isdir, splitext, basename, isfile
-from io import StringIO, BytesIO
-import subprocess
 from unittest.mock import patch
-
+import yaml
+import pytest
 # if running in pycharm, I guess sys.path is inserted, so:
 import sys
 sys.path.append(dirname(dirname(__file__)))
 import common
 
-# import yaml
-# import create_ngawest_dataset, create_kiknet_knet_dataset
-
-import pytest
-
 dest_data_dir = join(abspath(dirname(__file__)), 'tmp.datasets')
-# source_data_dir = join(abspath(dirname(__file__)), 'source_data')
 
 
 def tearDown():
@@ -102,11 +93,20 @@ destination: "{dest_data_dir}"
         assert isfile(join(dest_data_dir, dataset, f'{dataset}.meta.only.hdf'))
         assert isfile(join(dest_data_dir, dataset, dataset + '.log'))
 
-        zum = 0
-        for _ in records(dataset_path):
-            zum += 1
-            assert all(len(a) == 0 or len(a) > 1000 for a in _[:3])
+        with open(join(dirname(dirname(__file__)), 'metadata_fields.yml'), 'rb') as f:
+            meta_fields = set(yaml.safe_load(f).keys())
 
+        # data check:
+        zum = 0
+        for h1, h2, v, dt, meta in records(dataset_path):
+            # check we have all fields:
+            assert set(meta._fields) - meta_fields == set()
+            # check waveforms have points in waveforms (if not empty):
+            assert all(len(_) == 0 or len(_) > 1000 for _ in [h1, h2, v])
+            # counter:
+            zum += 1
+
+        # records function check:
         filters_less_than = 0
         for k, v in [
             ('missing_', False), ('max_', 6), ('min_', 5.5), ('', 5.5), ('', [4.5, 5])
@@ -119,24 +119,11 @@ destination: "{dest_data_dir}"
                 filters_less_than += 1
         assert filters_less_than >= 3
 
-        # assert isfile(w_file)
-        # w_dir = join(dest_data_dir, 'waveforms')
-        # assert isdir(w_dir)
-        # some_file = False
-        # for _, _, files in os.walk(w_dir):
-        #     if files and any(splitext(_)[1] == '.h5' for _ in files):  # If `files` list is not empty
-        #         some_file = True
-        #         break  # Directory contains at least one file
-        # assert some_file
-        # # Get printed output
     except Exception as e:
         # Raise a new exception with the subprocess traceback
         raise
     finally:
         del sys.modules[module_name]
-    #     # Restore originals
-    #     sys.argv = original_argv
-    #     sys.stdout = original_stdout
 
 
 def hdf_dataset_sizes(file_path):
