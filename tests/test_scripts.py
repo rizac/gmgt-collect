@@ -9,6 +9,11 @@ from io import StringIO, BytesIO
 import subprocess
 from unittest.mock import patch
 
+# if running in pycharm, I guess sys.path is inserted, so:
+import sys
+sys.path.append(dirname(dirname(__file__)))
+import common
+
 # import yaml
 # import create_ngawest_dataset, create_kiknet_knet_dataset
 
@@ -74,8 +79,9 @@ destination: "{dest_data_dir}"
         sys.modules[module_name] = mod
         spec.loader.exec_module(mod)
         sys.argv = [f'{module_name}.py', config_path]
-        with patch(f"{module_name}.min_waveforms_ok_ratio", 0):
-            mod.main()
+        # with patch(f"{module_name}.min_waveforms_ok_ratio", 0):
+        with patch(f"common.min_waveforms_ok_ratio", 0):
+            common.main(sys.modules[module_name])
     except SystemExit as err:
         assert err.args[0] == 0  # ok exit
 
@@ -170,7 +176,7 @@ def test_knet():
     run_(
         'create_kik_knet_dataset',
         'knet',
-        '~/Nextcloud/gmgt/source_data/kik/2025-001_Loviknes-et-al_1996_2024_knet_Oct24META.csv',
+        '~/Nextcloud/gmgt/source_data/knet/2025-001_Loviknes-et-al_1996_2024_knet_Oct24META.csv',
         "~/Nextcloud/gmgt/gmgt-collect-test-data/knet"
     )
 
@@ -213,8 +219,9 @@ import h5py
 from typing import Iterable, Optional
 
 
-def records(hdf_path, **filters) -> \
-        Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
+def records(
+    hdf_path, **filters
+) -> Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
     """
     Yield: (h1, h2, v, dt, metadata) for each matching record. The first three elements
     denote the record data (time history) and are numpy arrays of acceleration in m/s**2
@@ -223,6 +230,7 @@ def records(hdf_path, **filters) -> \
     (in s), and metadata is quite self-explanatory (you can access all metadata as
     normal attributes, e.g. `metadata.magnitude`)
 
+    :param hdf_path: dataset path (HDF format) path with waveforms and metadata
     :param filters: a keyword argument whose parameters are any metadata fields,
         optionally prefixed with 'min_', 'max_' and 'missing_' mapped to a matching
         values in order to filter specific metadata row and yield only the corresponding
