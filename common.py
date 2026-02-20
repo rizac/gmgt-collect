@@ -43,9 +43,7 @@ def main(py_script):  # noqa
 
     # load functions
     accept_file: Callable = py_script.accept_file
-    source_metadata_csv_args: dict = py_script.source_metadata_csv_args
-    source_metadata_fields: dict = py_script.source_metadata_fields
-    pre_process: Callable = py_script.pre_process
+    read_metadata: Callable = py_script.read_metadata
     find_sources: Callable = py_script.find_sources
     read_waveform: Callable = py_script.read_waveform
     post_process: Callable = py_script.post_process
@@ -122,34 +120,49 @@ def main(py_script):  # noqa
     logging.info(msg)
 
     print(f'Reading source metadata file...', end=" ", flush=True)
-    csv_args: dict[str, Any] = dict(source_metadata_csv_args)
-    # csv_args.setdefault('chunksize', 10000)
-    csv_args.setdefault(
-        'usecols', csv_args.get('usecols', {}) | source_metadata_fields.keys()
-    )
-    with warnings.catch_warnings(record=True) as _w_:
-        warnings.simplefilter("always", pd.errors.DtypeWarning)
-        metadata = pd.read_csv(source_metadata_path, **csv_args)
-        if _w_:
-            print(f'({_w_[0].message})', end=" ", flush=True)
-    metadata = metadata.rename(
-        columns={k: v for k, v in source_metadata_fields.items() if v is not None}
-    )
-    old_len = len(metadata)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=pd.errors.SettingWithCopyWarning)
-        metadata = pre_process(metadata, source_metadata_path, files).copy()
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("once", pd.errors.DtypeWarning)
+        metadata = read_metadata(source_metadata_path, files)
+        if caught_warnings:
+            for _w_ in caught_warnings:
+                print(f'({_w_.message})', end=" ", flush=True)
+    for _c in ['event_id', 'station_id']:
+        assert isinstance(metadata[_c].dtype, pd.CategoricalDtype), \
+            'event_id and station_id must be categorical'
+        metadata_fields[_c]['dtype'] = metadata[_c].dtype
 
-    for col in ['event_id', 'station_id']:
-        assert isinstance(metadata[col].dtype, pd.CategoricalDtype)
-        metadata_fields[col]['dtype'] = metadata[col].dtype
+    msg = (
+        f'{len(metadata):,} record(s), {len(metadata.columns):,} field(s) per record'
+    )
 
-    if len(metadata) < old_len:
-        logging.warning(f'{old_len - len(metadata)} metadata row(s) '
-                        f'removed in pre-processing stage')
-    msg = (f'{len(metadata):,} record(s), ' 
-           f'{len(metadata.columns):,} field(s) per record, '
-           f'{old_len - len(metadata)} row(s) removed in pre-process')
+    # csv_args: dict[str, Any] = dict(source_metadata_csv_args)
+    # # csv_args.setdefault('chunksize', 10000)
+    # csv_args.setdefault(
+    #     'usecols', csv_args.get('usecols', {}) | source_metadata_fields.keys()
+    # )
+    # with warnings.catch_warnings(record=True) as _w_:
+    #     warnings.simplefilter("always", pd.errors.DtypeWarning)
+    #     metadata = pd.read_csv(source_metadata_path, **csv_args)
+    #     if _w_:
+    #         print(f'({_w_[0].message})', end=" ", flush=True)
+    # metadata = metadata.rename(
+    #     columns={k: v for k, v in source_metadata_fields.items() if v is not None}
+    # )
+    # old_len = len(metadata)
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter("ignore", category=pd.errors.SettingWithCopyWarning)
+    #     metadata = pre_process(metadata, source_metadata_path, files).copy()
+    #
+    # for col in ['event_id', 'station_id']:
+    #     assert isinstance(metadata[col].dtype, pd.CategoricalDtype)
+    #     metadata_fields[col]['dtype'] = metadata[col].dtype
+    #
+    # if len(metadata) < old_len:
+    #     logging.warning(f'{old_len - len(metadata)} metadata row(s) '
+    #                     f'removed in pre-processing stage')
+    # msg = (f'{len(metadata):,} record(s), '
+    #        f'{len(metadata.columns):,} field(s) per record, '
+    #        f'{old_len - len(metadata)} row(s) removed in pre-process')
     print(msg)
     logging.info(msg)
 
