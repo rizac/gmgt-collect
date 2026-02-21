@@ -236,33 +236,40 @@ def records(
 
     with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
         h5_root_group = h5_f["waveforms"]
+        meta_columns: set = None
         for chunk in pd_f.select("metadata", chunksize=chunk_size):  # noqa
             mask = pd.Series(True, index=chunk.index)
+            if meta_columns is None:
+                meta_columns = set(chunk.columns)  # lazy create columns
             for expr, value in filters.items():
+                is_expr = expr not in meta_columns
                 try:
-                    if expr.startswith('min_'):
-                        col = expr[4:]
-                        # categorical column, need to work on categories:
-                        if isinstance(chunk[col].dtype, pd.CategoricalDtype):
-                            categs = chunk[col].cat.categories  # pandas Index
-                            col_mask = chunk[col].isin(categs[categs >= value])
+                    if is_expr:
+                        if expr.startswith('min_'):
+                            col = expr[4:]
+                            # categorical column, need to work on categories:
+                            if isinstance(chunk[col].dtype, pd.CategoricalDtype):
+                                categs = chunk[col].cat.categories  # pandas Index
+                                col_mask = chunk[col].isin(categs[categs >= value])
+                            else:
+                                col_mask = chunk[col] >= value
+                        elif expr.startswith('max_'):
+                            col = expr[4:]
+                            if isinstance(chunk[col].dtype, pd.CategoricalDtype):
+                                categs = chunk[col].cat.categories  # pandas Index
+                                col_mask = chunk[col].isin(categs[categs <= value])
+                            else:
+                                col_mask = chunk[col] <= value
+                        elif expr.startswith('missing_'):
+                            col = expr[8:]
+                            if value is True:
+                                col_mask = chunk[col].isna()
+                            elif value is False:
+                                col_mask = chunk[col].notna()
+                            else:
+                                raise ValueError(f'True/False expected, found {value}')
                         else:
-                            col_mask = chunk[col] >= value
-                    elif expr.startswith('max_'):
-                        col = expr[4:]
-                        if isinstance(chunk[col].dtype, pd.CategoricalDtype):
-                            categs = chunk[col].cat.categories  # pandas Index
-                            col_mask = chunk[col].isin(categs[categs <= value])
-                        else:
-                            col_mask = chunk[col] <= value
-                    elif expr.startswith('missing_'):
-                        col = expr[8:]
-                        if value is True:
-                            col_mask = chunk[col].isna()
-                        elif value is False:
-                            col_mask = chunk[col].notna()
-                        else:
-                            raise ValueError(f'True/False expected, found {value}')
+                            raise ValueError(f'"{expr}" is not a valid metadata field')
                     else:
                         col = expr
                         if isinstance(value, (tuple, list, set)):
@@ -275,23 +282,5 @@ def records(
                     raise ValueError(f'Error in "{expr}": {exc}')
 
             for row in chunk[mask].itertuples(name='metadata', index=False):
-                waveform = h5_root_group[row.event_id][row.station_id]
-                yield waveform[0], waveform[1], waveform[2], waveform.attrs['dt'], row
-
-
-def iter_records_v0(hdf_path, query_string=None, chunk_size=10000) -> \
-        Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
-    """
-    THIS CODE IS A REMINDER OF HOW CODE COULD READ BACK THE DATA.
-
-    Efficiently query metadata ON DISK and yield:
-    (h1, h2, v, metadata_row) for each matching record.
-
-    metadata_row is a Pandas Series.
-    """
-    with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
-        h5_root_group = h5_f["waveforms"]
-        for chunk in pd_f.select("metadata", where=query_string, chunksize=chunk_size):  # noqa
-            for row in chunk.itertuples(index=False):
                 waveform = h5_root_group[row.event_id][row.station_id]
                 yield waveform[0], waveform[1], waveform[2], waveform.attrs['dt'], row
