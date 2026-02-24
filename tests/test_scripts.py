@@ -216,12 +216,12 @@ def tst_source_metadata_stats():
 import numpy as np
 import pandas as pd
 import h5py
-from typing import Iterable, Optional
+from typing import Iterator
 
 
 def records(
     hdf_path, **filters
-) -> Iterable[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray, float, tuple]]:
     """
     Yield waveform records matching the given filters.
 
