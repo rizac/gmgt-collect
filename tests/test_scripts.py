@@ -258,7 +258,7 @@ def records(
            boolean or datetime fields to avoid lexical comparison issues
            (e.g. "9" > "10"), except for `origin_time_resolution`. Example:
            `min_origin_time_resolution="s"` will get records with
-           event resolutions equal to, or finer than seconds
+           event resolutions equal to or finer than seconds
 
         2. Values cannot be None, NaN, or NaT. To filter missing values,
            use the `missing_` prefix. Example: `missing_magnitude=False`
@@ -272,28 +272,32 @@ def records(
     for h1, h2, v, dt, m in records(path, magnitude=6):
     for h1, h2, v, dt, m in records(path, magnitude=[4, 5, 6]):
     """
-    # first check (no na in values):
-    invalid = []
-    for expr, value in filters.items():
-        if np.any(pd.isna(value)):
-            invalid.append(expr)
-    if invalid:
-        raise ValueError(f'Invalid None/NaN value provided for: {", ".join(invalid)}')
-
-    chunk_size = 100000  # chunk for pandas read_hdf (tuneing speed / memory usage)
-
     with pd.HDFStore(hdf_path, "r") as pd_f, h5py.File(hdf_path, "r") as h5_f:
         h5_root_group = h5_f["waveforms"]
         meta_columns: set = None
-        for chunk in pd_f.select("metadata", chunksize=chunk_size):  # noqa
-            mask = pd.Series(True, index=chunk.index)
+
+        #  pandas functions proxies:
+        is_datetime = pd.api.types.is_datetime64_dtype
+        is_numeric = pd.api.types.is_numeric_dtype
+
+        # iterate over metadata (adjust chunk size if needed):
+        for chunk in pd_f.select("metadata", chunksize=100000):  # noqa
+            mask = np.ones(len(chunk), dtype=bool)
 
             if meta_columns is None:
                 # lazy create columns
                 meta_columns = set(chunk.columns)
 
+                # check (one-time op) on values (we don't need to know meta columns):
+                invalid = [xpr for xpr, val in filters.items() if np.any(pd.isna(val))]
+                if invalid:
+                    raise ValueError(
+                        f'Invalid None/NaN value provided for: {", ".join(invalid)}'
+                    )
+
             for expr, value in filters.items():
                 try:
+                    col_mask = None
 
                     if expr in meta_columns:
                         if isinstance(value, (tuple, list, set)):
@@ -305,58 +309,58 @@ def records(
                         col = expr[4:]
 
                         if col == 'origin_time_resolution':
-                            values = ['Y', 'M', 'D', 'H', 'm', 's']
-                            assert value in values, f'invalid value: {value}'
+                            categs = ['Y', 'M', 'D', 'H', 'm', 's']
+                            assert value in categs, f'invalid value: {value}'
 
                             if expr.startswith('min_'):
-                                col_mask = chunk[col].isin(
-                                    values[values.index(value):]
-                                )
+                                values = categs[categs.index(value):]
                             else:
-                                col_mask = chunk[col].isin(
-                                    values[:values.index(value) + 1]
-                                )
-                        # categorical column, need to work on categories:
-                        elif isinstance(chunk[col].dtype, pd.CategoricalDtype):
-                            categs = chunk[col].cat.categories  # pandas Index
-                            if (
-                                pd.api.types.is_datetime64_dtype(categs) or
-                                pd.api.types.is_numeric_dtype(categs)
-                            ):
+                                values = categs[:categs.index(value) + 1]
+
+                            col_mask = chunk[col].isin(values)
+
+                        elif col in meta_columns:
+
+                            if isinstance(chunk[col].dtype, pd.CategoricalDtype):
+                                # categorical column, need to work on categories:
+                                categs = chunk[col].cat.categories  # pandas Index
+                                if is_datetime(categs) or is_numeric(categs):
+
+                                    if expr.startswith('min_'):
+                                        values = categs[categs >= value]
+                                    else:
+                                        values = categs[categs <= value]
+
+                                    col_mask = chunk[col].isin(values)
+
+                            elif is_datetime(chunk[col]) or is_numeric(chunk[col]):
+
                                 if expr.startswith('min_'):
-                                    col_mask = chunk[col].isin(categs[categs >= value])
+                                    col_mask = chunk[col] >= value
                                 else:
-                                    col_mask = chunk[col].isin(categs[categs <= value])
-                            else:
+                                    col_mask = chunk[col] <= value
+
+                            if col_mask is None:
                                 raise ValueError(
                                     'invalid on non-numeric, non-datetime data field'
                                 )
-                        elif (
-                            pd.api.types.is_datetime64_dtype(chunk[col]) or
-                            pd.api.types.is_numeric_dtype(chunk[col])
-                        ):
-                            if expr.startswith('min_'):
-                                col_mask = chunk[col] >= value
-                            else:
-                                col_mask = chunk[col] <= value
-                        else:
-                            raise ValueError(
-                                'invalid on non-numeric, non-datetime data field'
-                            )
 
                     elif expr.startswith('missing_'):
                         col = expr[8:]
-                        if value is True:
-                            col_mask = chunk[col].isna()
-                        elif value is False:
-                            col_mask = chunk[col].notna()
-                        else:
-                            raise ValueError(f'True/False expected, found {value}')
 
-                    else:
-                        raise ValueError(f'expected field name or expression')
+                        if col in meta_columns:
 
-                    mask &= col_mask
+                            if value is True:
+                                col_mask = chunk[col].isna()
+                            elif value is False:
+                                col_mask = chunk[col].notna()
+                            else:
+                                raise ValueError(f'True/False expected, found {value}')
+
+                    if col_mask is None:
+                        raise ValueError(f'expected metadata field name or expression')
+
+                    mask &= col_mask.to_numpy()
 
                 except (TypeError, ValueError, KeyError, AssertionError) as exc:
                     raise ValueError(f'Error in "{expr}": {exc}')
