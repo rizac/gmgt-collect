@@ -257,10 +257,10 @@ def records(
         1. The `min_` and `max_` prefixes can be used only with numeric,
            boolean or datetime fields to avoid lexical comparison issues
            (e.g. "9" > "10"), except for `origin_time_resolution`. Example:
-           `min_origin_time_resolution="s"` will get records with
-           event resolutions equal to or finer than seconds
+           `max_origin_time_resolution="s"` will get records with
+           event time resolutions equal to or finer than seconds
 
-        2. Values cannot be None, NaN, or NaT. To filter missing values,
+        2. Values cannot be None or NaN. To filter missing values,
            use the `missing_` prefix. Example: `missing_magnitude=False`
            to get only records with magnitude defined
 
@@ -300,37 +300,50 @@ def records(
                     col_mask = None
 
                     if expr in meta_columns:
+
                         if isinstance(value, (tuple, list, set)):
                             col_mask = chunk[expr].isin(value)
                         else:
                             col_mask = chunk[expr] == value
 
+                    elif expr.startswith('missing_'):
+                        col = expr[8:]
+
+                        if col in meta_columns:
+
+                            if value is True:
+                                col_mask = chunk[col].isna()
+                            elif value is False:
+                                col_mask = chunk[col].notna()
+                            else:
+                                raise ValueError(f'True/False expected, found {value}')
+
                     elif expr.startswith('min_') or expr.startswith('max_'):
                         col = expr[4:]
 
-                        if col == 'origin_time_resolution':
-                            categs = ['Y', 'M', 'D', 'H', 'm', 's']
-                            assert value in categs, f'invalid value: {value}'
+                        if col in meta_columns:
 
-                            if expr.startswith('min_'):
-                                values = categs[categs.index(value):]
-                            else:
-                                values = categs[:categs.index(value) + 1]
+                            if col == 'origin_time_resolution':
+                                categories = ['Y', 'M', 'D', 'H', 'm', 's']
+                                assert value in categories, f'invalid value: {value}'
 
-                            col_mask = chunk[col].isin(values)
+                                if expr.startswith('max_'):
+                                    values = categories[categories.index(value):]
+                                else:
+                                    values = categories[:categories.index(value)]
 
-                        elif col in meta_columns:
+                                col_mask = chunk[col].isin(values)
 
-                            if isinstance(chunk[col].dtype, pd.CategoricalDtype):
+                            elif isinstance(chunk[col].dtype, pd.CategoricalDtype):
                                 # categorical column, need to work on categories:
-                                categs = chunk[col].cat.categories  # pandas Index
-                                if is_datetime(categs) or is_numeric(categs):
+                                categories = chunk[col].cat.categories  # pandas Index
+
+                                if is_datetime(categories) or is_numeric(categories):
 
                                     if expr.startswith('min_'):
-                                        values = categs[categs >= value]
+                                        values = categories[categories >= value]
                                     else:
-                                        values = categs[categs <= value]
-
+                                        values = categories[categories <= value]
                                     col_mask = chunk[col].isin(values)
 
                             elif is_datetime(chunk[col]) or is_numeric(chunk[col]):
@@ -344,18 +357,6 @@ def records(
                                 raise ValueError(
                                     'invalid on non-numeric, non-datetime data field'
                                 )
-
-                    elif expr.startswith('missing_'):
-                        col = expr[8:]
-
-                        if col in meta_columns:
-
-                            if value is True:
-                                col_mask = chunk[col].isna()
-                            elif value is False:
-                                col_mask = chunk[col].notna()
-                            else:
-                                raise ValueError(f'True/False expected, found {value}')
 
                     if col_mask is None:
                         raise ValueError(f'expected metadata field name or expression')
