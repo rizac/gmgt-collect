@@ -8,6 +8,7 @@ from urllib.request import urlopen
 
 import yaml
 import pytest
+import h5py
 # if running in pycharm, I guess sys.path is inserted, so:
 import sys
 sys.path.append(dirname(dirname(__file__)))
@@ -16,33 +17,36 @@ import common
 dest_data_dir = join(abspath(dirname(__file__)), 'tmp.datasets')
 
 
-with urlopen('https://github.com/rizac/gmgt/gmgt.py') as _1:
-    with open(join(dest_data_dir, 'gmgt.py'), 'w') as _2:
+
+# IMPORT gmgt.py and test it:
+
+gmgt_file = join(abspath(dirname(__file__)), 'gmgt.py')
+
+if isfile(gmgt_file):
+    raise ValueError("gmgt.py already exists")
+
+with urlopen('https://raw.githubusercontent.com/rizac/gmgt/refs/heads/main/gmgt.py') as _1:
+    with open(gmgt_file, 'wb') as _2:
         _2.write(_1.read())
 
 from gmgt import get_records  # noqa  (it will find it)
 
-# import
-
-def tearDown():
-    shutil.rmtree(dest_data_dir)
-    # sys.path.pop(0)
 
 
-def setUp():
+def setup_module (module):
+    """teardown any state that was previously setup with a setup_module
+    method.
+    """
     if not isdir(dest_data_dir):
         os.makedirs(dest_data_dir)
-    # src = dirname(dirname(__file__))
-    # shutil.copy(join(src, 'create_ngawest_dataset.py'),
-    #             join(root, 'create_ngawest_dataset.py'))
-    # sys.path.insert(0, root)
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_teardown():
-    setUp()
-    yield
-    tearDown()
+def teardown_module(module):
+    """setup any state specific to the execution of the given module."""
+    shutil.rmtree(dest_data_dir)
+    # sys.path.pop(0)
+    if isfile(gmgt_file):
+        os.remove(gmgt_file)
 
 
 def run_(module_name:str, dataset: str, src_metadata_path: str, src_data_dir: str):
@@ -87,11 +91,6 @@ destination: "{dest_data_dir}"
         assert err.args[0] == 0  # ok exit
 
         dataset_path = join(dest_data_dir, dataset + '.hdf')
-        data = {
-            'metadata': 0,
-            'waveforms': 0,
-            'metadata_doc': 0
-        }
         with h5py.File(dataset_path, 'r') as f:
             assert sorted(f.keys()) == ['metadata', 'metadata_doc', 'waveforms']
             # keys = f['waveforms'].keys()
