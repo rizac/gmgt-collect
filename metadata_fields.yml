@@ -197,9 +197,8 @@ available_components:
 sampling_rate:
   dtype: int
   help: >- 
-    the sampling rate. If non-zero, it is the sampling rate of all available
-    components (h1, h2, v). Zero denotes some error (sampling rate not equal among 
-    components, or non-integer): in this case, no waveform will be saved. [Mandatory]
+    the sampling rate >0 of all available components (h1, h2, v), computed as the 
+    inverse of the data time step dt rounded to int. [Mandatory]
   default: 0
 PGA:
   dtype: float

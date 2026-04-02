@@ -191,9 +191,7 @@ def main(py_script):  # noqa
             # finalize clean_record:
             avail_comps, sampling_rate = extract_metadata_from_waveforms(h1, h2, v)
             new_record['available_components'] = avail_comps
-            new_record['sampling_rate'] = sampling_rate if \
-                pd.notna(sampling_rate) else \
-                int(metadata_fields['sampling_rate']['default'])
+            new_record['sampling_rate'] = sampling_rate
 
             clean_record = {}
             for f in metadata_fields:
@@ -468,19 +466,22 @@ def extract_metadata_from_waveforms(
     h2: Optional[Waveform],
     v: Optional[Waveform]
 ) -> tuple[Optional[str], Optional[int]]:
-    dt = None
+    dts = set()
     avail_comps = ''
     for comp, avail_comp_str in zip((h1, h2, v), ('H', 'H', 'V')):
         if comp is None:
             continue
-        if avail_comps == '':  # first non null component
-            dt = comp.dt
-        elif comp.dt != dt:
-            dt = None
+        dts.add(comp.dt)
         avail_comps += avail_comp_str
 
-    sampling_rate = int(1./dt) if dt is not None and int(1./dt) == 1./dt else None
-    return avail_comps, sampling_rate
+    if len(dts) != 1:
+        raise ValueError(f"`dt` mismatch between components")
+
+    dt = next(iter(dts))
+    if dt <=0:
+        raise ValueError(f"`dt` <= 0")
+
+    return avail_comps, int(1./dt)
 
 
 def save_metadata(

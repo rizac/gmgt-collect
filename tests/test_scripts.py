@@ -14,22 +14,25 @@ import sys
 sys.path.append(dirname(dirname(__file__)))
 import common
 
-dest_data_dir = join(abspath(dirname(__file__)), 'tmp.datasets')
+tmp_test_dir = join(abspath(dirname(__file__)), 'tmp')
 
+# IMPORT gmgt.py to test the get_records function distributed in gmgt package:
 
-
-# IMPORT gmgt.py and test it:
-
-gmgt_file = join(abspath(dirname(__file__)), 'gmgt.py')
+gmgt_file = join(tmp_test_dir, 'gmgt.py')
 
 if isfile(gmgt_file):
-    raise ValueError("gmgt.py already exists")
+    raise ValueError(f"Please remove manually {tmp_test_dir}")
+
+dest_data_dir = join(tmp_test_dir, 'datasets')
+
+if not isdir(dest_data_dir):
+    os.makedirs(dest_data_dir)
 
 with urlopen('https://raw.githubusercontent.com/rizac/gmgt/refs/heads/main/gmgt.py') as _1:
     with open(gmgt_file, 'wb') as _2:
         _2.write(_1.read())
 
-from gmgt import get_records  # noqa  (it will find it)
+from tmp.gmgt import get_records  # noqa  (it will find it)
 
 
 
@@ -37,16 +40,12 @@ def setup_module (module):
     """teardown any state that was previously setup with a setup_module
     method.
     """
-    if not isdir(dest_data_dir):
-        os.makedirs(dest_data_dir)
+    pass
 
 
 def teardown_module(module):
     """setup any state specific to the execution of the given module."""
-    shutil.rmtree(dest_data_dir)
-    # sys.path.pop(0)
-    if isfile(gmgt_file):
-        os.remove(gmgt_file)
+    shutil.rmtree(tmp_test_dir)
 
 
 def run_(module_name:str, dataset: str, src_metadata_path: str, src_data_dir: str):
@@ -173,20 +172,38 @@ def test_ngawest2():
         '~/Nextcloud/gmgt/gmgt-collect-test-data/ngawest2'
     )
 
-def test_kik():
+# def test_kik():
+#     run_(
+#         'create_kik_knet_dataset',
+#         'kik',
+#         '~/Nextcloud/gmgt/source_data/kik/2025-001_Loviknes-et-al_1997_2024_kik_Oct24META.csv',
+#         "~/Nextcloud/gmgt/gmgt-collect-test-data/kik"
+#     )
+#
+#
+# def test_knet():
+#     run_(
+#         'create_kik_knet_dataset',
+#         'knet',
+#         '~/Nextcloud/gmgt/source_data/knet/2025-001_Loviknes-et-al_1996_2024_knet_Oct24META.csv',
+#         "~/Nextcloud/gmgt/gmgt-collect-test-data/knet"
+#     )
+
+
+def test_kik2():
     run_(
-        'create_kik_knet_dataset',
+        'create_kik_knet2_dataset',
         'kik',
-        '~/Nextcloud/gmgt/source_data/kik/2025-001_Loviknes-et-al_1997_2024_kik_Oct24META.csv',
-        "~/Nextcloud/gmgt/gmgt-collect-test-data/kik"
+        '~/Nextcloud/gmgt/source_data/kik2/2026-001_Loviknes-et-al_1997_2025_kik_META.csv',
+        "~/Nextcloud/gmgt/gmgt-collect-test-data/kik2"
     )
 
-def test_knet():
+def test_knet2():
     run_(
-        'create_kik_knet_dataset',
+        'create_kik_knet2_dataset',
         'knet',
-        '~/Nextcloud/gmgt/source_data/knet/2025-001_Loviknes-et-al_1996_2024_knet_Oct24META.csv',
-        "~/Nextcloud/gmgt/gmgt-collect-test-data/knet"
+        '~/Nextcloud/gmgt/source_data/knet2/2026-001_Loviknes-et-al_1996_2025_knet_META.csv',
+        "~/Nextcloud/gmgt/gmgt-collect-test-data/knet2"
     )
 
 def test_esm():
