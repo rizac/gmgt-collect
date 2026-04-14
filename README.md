@@ -40,3 +40,9 @@ publicly for rights and size issues. Please contact the author for questions
     ```
 
 3. Execute `create_<dataset_name>.py <dataset_name>.yml`
+
+# Upload to casco server
+
+Follow instructions in gmgt **reversing source and destination**. 
+The machine currently used to create the datasets (rs1) has already
+the ssh public key set on the server, so no password is required
